@@ -1,75 +1,99 @@
 import json
-import os.path
+import os
 from cryptography.fernet import Fernet
-import atexit
 
 
-def check_assets():
-    # Check if "database.json" exists
-    if os.path.exists("database.json"):
-        print('Database has been loaded...')
+def does_file_exist(which_file, verbose=True):
+    if which_file == "database": file_to_check = "database.json"
+    if which_file == "key": file_to_check = "key.key"
 
-    # If not, it will create it
+    if verbose==True: print ("Checking if", which_file, "exists")
+    # Check if file exists
+    if os.path.exists(file_to_check):
+        if verbose==True: print(which_file, "exists")
+        return True
     else:
-        file = open("database.json", 'w')
-        file.write('''{
-  "accounts": [
-    
-  ]
-}''')
-        file.close()
-        print('"database.json" has been created...')
-        create_master_password()
+        if verbose==True: print(which_file, "does not exist")
+        return False
 
 
-def create_master_password():
+def create_key():
     # Creates master password, or key
     key = Fernet.generate_key()
-    file = open("key.key", 'wb')
-    file.write(key)
-    file.close()
-
-    # Instructions
-    print('Master password, or key, has been created. Check "key.key".\nInstructions:\n* Before you open the program, paste the valid key in this directory.\n* The program will attempt to validate the key\n* If failed, the program will be terminated\n* Once the key is validated, the database will be unlocked, or decrypted\n* When you exit the program, the database will be automatically locked, or encrypted\n* Remove key from this directory and hide it somewhere only you know (this is to prevent unauthorized access, the valid key is very difficult to crack, if possible anyway)\n!! DISCLAIMER: IF KEY IS LOST, YOU WILL NOT BE ABLE TO ACCESS THE DATABASE. You make open the key.key file in a text editor and save the key somewhere to re-create the key.key file.\nDO NOT SHARE THIS KEY WITH ANYONE TO AVOID UNAUTHORIZED ACCESS!')
+    with open ("key.key", "wb") as key_file:
+        key_file.write(key)
+        # Instructions
+    print('Key, has been created. Check "key.key".\nInstructions:\n* Before you open the program, paste the valid key in this directory.\n* The program will attempt to validate the key\n* If failed, the program will be terminated\n* Once the key is validated, the database will be unlocked, or decrypted\n* When you exit the program, the database will be automatically locked, or encrypted\n* Remove key from this directory and hide it somewhere only you know (this is to prevent unauthorized access, the valid key is very difficult to crack, if possible anyway)\n!! DISCLAIMER: IF KEY IS LOST, YOU WILL NOT BE ABLE TO ACCESS THE DATABASE. You make open the key.key file in a text editor and save the key somewhere to re-create the key.key file.\nDO NOT SHARE THIS KEY WITH ANYONE TO AVOID UNAUTHORIZED ACCESS!')
 
 
-def read_key():
-    # Check if "key.key" file exists
-    if os.path.exists("key.key"):
-        file = open("key.key", 'rb')
-        key = file.read()
-        file.close()
-
-        # If the key does exist in the directory, the program will attempt validate the key
-        try:
-            fernet = Fernet(key)
-            testing_string = 'testing string'.encode()
-            testing_string = fernet.encrypt(testing_string)
-            print('Valid token provided, proceeding.')
-
-        # If the key is not valid, the program will be terminated
-        except:
-            print('Error: Invalid key provided.')
-            input()
-            exit()
-
-    # Key not found prompt
-    else:
-        print('Key not found. Paste the valid "key.key" file in this directory to unlock the program.\nNote: If you have the key but deleted the key.key file, create a new file with the name "key" and extension ".key" so that it becomes a "key.key" file. Open the file with a text editor and paste your key inside the file.\nIf you completely lost your key, you are unable to unlock this database, therefore, you make delete the "database.json" file to start a new database. A new key will be generated if you do.\nIF YOU DELETE THE CURRENT DATABASE, ALL ENTRIES WILL BE LOST!')
-        input()
-        exit()
-
-
-def encrypt_database():
-    # Reads decrypted version of "database.json"
-    with open("database.json", 'rb') as f:
-        data = f.read()
-
+def get_key():
     # Accesses key
-    file = open("key.key", 'rb')
-    key = file.read()
-    file.close()
+    with open("key.key", "rb") as key_file:
+        key = key_file.read()
     fernet = Fernet(key)
+    return fernet
+
+
+def test_key():
+    if does_key_exist == False:
+        print ("Key does not exist...")
+        create_new_key = input ("Key does not exist. Do you want to create it? (Y)es or (N)o?").lower()
+        if create_new_key == "y":
+            create_key()
+        else:
+            return
+
+    # If the key does exist in the directory (or if we have just created it), the program will attempt validate the key
+    try:
+        fernet = get_key()
+        testing_string = 'testing string'.encode()
+        testing_string = fernet.encrypt(testing_string)
+        print('Valid token provided, proceeding.')
+        return
+
+    # If the key is not valid, the program will return
+    except:
+        print('Error: Invalid key provided.')
+        return
+
+
+def load_database_from_file():
+    if does_file_exist("database", verbose=False):
+        with open("database.json", 'rb') as database_file:
+            encrypted_data = database_file.read()
+
+        fernet = get_key()
+        plaintext_data = fernet.decrypt(encrypted_data)
+
+        # I really hate that we have to do this, but fernet seems to require it be read from a file, so ok
+        with open("database_plaintext.json", 'wb') as database_file:
+            database_file.write(plaintext_data)
+
+        with open("database_plaintext.json", "rb") as database_file:
+            decrypted_data = json.load(database_file)
+
+        os.remove("database_plaintext.json")
+
+        if type(decrypted_data) is dict:
+            decrypted_data = [decrypted_data]
+
+    else:
+        decrypted_data = []
+
+    return decrypted_data
+
+
+def write_database_to_file(plaintext_data):
+    # write the data in plaintext
+    with open('database.json', 'w') as database_file:
+        json.dump(plaintext_data, database_file, indent=4)
+
+    # reload it and load into memory
+    with open("database.json", 'rb') as database_file:
+        data = database_file.read()
+
+    # get the key
+    fernet = get_key()
 
     # Encrypts database
     encrypted_database = fernet.encrypt(data)
@@ -78,44 +102,31 @@ def encrypt_database():
     with open("database.json", 'wb') as f:
         f.write(encrypted_database)
 
-
-def decrypt_database():
-    # Reads encrypted version of "database.json
-    with open("database.json", 'rb') as f:
-        data = f.read()
-
-    # Accesses key
-    file = open("key.key", 'rb')
-    key = file.read()
-    file.close()
-    fernet = Fernet(key)
-
-    # Decrypts database
-    decrypted_database = fernet.decrypt(data)
-
-    # Writes decrypted database
-    with open("database.json", 'wb') as f:
-        f.write(decrypted_database)
+    return
 
 
 def view_accounts():
-    # Loads "database.json"
-    with open("database.json", 'r') as f:
-        data = json.load(f)
+    # Loads database
+    data = load_database_from_file()
+
+    number_of_accounts_loaded = len(data)
+    print(str(number_of_accounts_loaded), "accounts found!")
+    print('###########\n')
+
+
+    if number_of_accounts_loaded == 0:
+        return
 
     # Attempts to print all accounts and their information
-    try:
-        for account in data['accounts']:
-            print(f'Website: {account["website"]}')
-            print(f'Username: {account["username"]}')
-            print(f'Password: {account["password"]}')
-            print(f'Notes: {account["notes"]}')
-            print('###########\n')
-    except:
-        print('###########\n')
-        print('No accounts found!')
+    for account in data:
+        print("Website: ", account.get("website"))
+        print("Username: ", account.get("username"))
+        print("Password: ", account.get("password"))
+        print("Username: ", account.get("notes"))
 
-    select_operation()
+        print('###########\n')
+
+    return
 
 
 def add_account():
@@ -125,119 +136,92 @@ def add_account():
     password = input('Enter password: ')
     notes = input('Enter notes (If none, type "None"): ')
 
-    # Prepares to add new account
-    new_account = {"website": website, "username": username, "password": password, "notes": notes}
+    # You probably want to add some validation here to check that something has actually been entered...
 
-    # Loads "database.json"
-    with open("database.json", 'r+') as file:
-        data = json.load(file)
+    # Loads previous data from json file
+    data = load_database_from_file()
 
-        # Adding the new account to the database
-        data["accounts"].append(new_account)
-        file.seek(0)
-        json.dump(data, file, indent=2)
+    # Append the new data
+    data.append({
+        "website": website,
+        "username": username,
+        "password": password,
+        "notes": password
+    })
 
-    print('###########\n')
-    print('Account has been successfully created!')
-    select_operation()
-
-
-def delete_account():
-    # Asking for account website
-    website = input('Enter website name: ').lower()
-    with open("database.json") as f:
-        data = json.load(f)
-
-    # Looping through the accounts to find the account that the user is looking for
-    for account in data["accounts"]:
-        if account["website"] == website:
-            print('###########')
-            print(f'Website: {account["website"]}')
-            print(f'Username: {account["username"]}')
-            print(f'Password: {account["password"]}')
-            print(f'Notes: {account["notes"]}')
-            print('###########')
-
-            # Confirmation
-            prompt = input('Are you sure you want to delete? This action cannot be undone(Y/N): ').lower()
-            if prompt == 'y':
-                data["accounts"].remove(account)
-                with open("database.json", 'w') as f:
-                    json.dump(data, f, indent=2)
-                print('Account deleted.')
-                print('###########\n')
-                select_operation()
-                return
-            else:
-                print('Operation cancelled.')
-                print('###########\n')
-                select_operation()
-                return
+    # Then write it back to the file
+    write_database_to_file(data)
 
     print('###########\n')
-    print('Account not found!')
-    select_operation()
+    print('Account has been successfully added to file!')
+    return
 
 
-def search_for_account():
-    # Asking for account website
-    website = input('Enter website name: ').lower()
-    with open("database.json") as f:
-        data = json.load(f)
+def specific_account(website, action="view"):
+    data = load_database_from_file()
 
     # Looping through the accounts to find the account that the user is looking for
-    for account in data["accounts"]:
+    for account in data:
         if account["website"] == website:
+
             print('###########')
-            print(f'Website: {account["website"]}')
-            print(f'Username: {account["username"]}')
-            print(f'Password: {account["password"]}')
-            print(f'Notes: {account["notes"]}')
+            print('Website: ', account["website"])
+            print('Username: ', account["username"])
+            print('Password: ', account["password"])
+            print('Notes: ', account["notes"])
             print('###########')
 
-            select_operation()
+            if action == "delete":
+                # Confirmation
+                prompt = input('Are you sure you want to delete? This action cannot be undone(Y/N): ').lower()
+                if prompt == 'y':
+                    data.remove(account)
+                    write_database_to_file(data)
+                    print('Account deleted.')
+                    print('###########\n')
+
+                else:
+                    print('Operation cancelled.')
+                    print('###########\n')
+
             return
 
     print('Account not found!')
     print('###########\n')
-    select_operation()
+    return
 
 
 def select_operation():
     print('\nOperations:\nA: View Accounts\nB: Add Account\nC: Delete Account\nD: Search For Account\nE: Exit\n')
     answer = 'e'
-    try:
-        answer = input('Input operation letter: ').lower()
-    except:
-        encrypt_database()
+    answer = input('Input operation letter: ').lower()
 
     print('\n###########')
     if answer == 'a':
         view_accounts()
-    elif answer == 'b':
+    if answer == 'b':
         add_account()
-    elif answer == 'c':
-        delete_account()
-    elif answer == 'd':
-        search_for_account()
-    else:
-        exit()
+    if answer == 'c':
+        website = input('Enter website name to delete: ').lower()
+        specific_account (website, "delete")
+    if answer == 'd':
+        website = input('Enter website name to view: ').lower()
+        specific_account (website)
 
+    return answer
+
+
+# Main loop
 
 print('Loading Assets...')
-check_assets()
 
-print('Reading key.key file...')
-read_key()
-try:
-    decrypt_database()
-except:
-    pass
+if does_file_exist("key") == False:
+    print ("Creating key...")
+    create_key()
 
-print('\n################')
-print('PyPass unlocked!')
-print('################\n')
+function_to_run = None
+while function_to_run != "e":
+    function_to_run = select_operation()
+    # doing it this way means the script will loop until we get the exit key
 
-select_operation()
-
-atexit.register(encrypt_database)
+print ("Exiting...")
